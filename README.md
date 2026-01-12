@@ -1,4 +1,4 @@
-# Multi-Tenant GDPR-Compliant Infrastructure
+# Multi-Tenant Infrastructure
 
 A multi-tenant infrastructure platform built with **Terragrunt Stacks (v0.97+)**.
 
