@@ -154,28 +154,6 @@ Enable the **Provider Cache Server** to dramatically speed up `run --all` comman
 # Using flag
 terragrunt run --all --provider-cache plan
 
-# Using environment variable (recommended for CI/CD)
-export TG_PROVIDER_CACHE=1
-terragrunt run --all plan
-```
-
-**Benefits:**
-- Downloads each provider version only once (saves ~100MB per unit per provider)
-- Shared across all units during `run --all` operations
-- Persists in `~/.terragrunt-cache/terragrunt/providers/`
-
-### Parallelism Control
-
-Control how many units run in parallel:
-
-```bash
-# Increase parallelism (default: 10)
-terragrunt run --all --parallelism 20 plan
-
-# Environment variable
-export TG_PARALLELISM=20
-```
-
 ### Recommended CI/CD Environment Variables
 
 ```bash
@@ -184,21 +162,6 @@ export TG_PROVIDER_CACHE=1              # Enable provider caching
 export TG_PARALLELISM=15                # Adjust based on CI runner capacity
 export TG_NON_INTERACTIVE=1             # Skip prompts in CI
 export TF_INPUT=0                       # Terraform non-interactive mode
-```
-
-### Complete Optimized Workflow
-
-```bash
-cd live
-
-# Set environment variables
-export TG_PROVIDER_CACHE=1
-export TG_PARALLELISM=15
-
-# Generate, plan, and apply with caching
-terragrunt stack generate
-terragrunt run --all plan
-terragrunt run --all apply
 ```
 
 ---
