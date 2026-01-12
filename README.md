@@ -1,6 +1,6 @@
 # Multi-Tenant GDPR-Compliant Infrastructure
 
-A production-ready, multi-tenant infrastructure platform built with **Terragrunt Stacks (v0.97+)** and **AWS Official Terraform Modules**.
+A multi-tenant infrastructure platform built with **Terragrunt Stacks (v0.97+)**.
 
 ## Features
 
@@ -15,30 +15,31 @@ A production-ready, multi-tenant infrastructure platform built with **Terragrunt
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         GLOBAL CONFIGURATION                             │
-│                           (globals.hcl)                                  │
-└────────────────────────────────┬────────────────────────────────────────┘
-                                 │
-        ┌────────────────────────┼────────────────────────┐
-        ▼                        ▼                        ▼
-┌───────────────┐      ┌───────────────┐      ┌───────────────────────┐
-│  US REGION    │      │  EU REGION    │      │  SINGLE-TENANT        │
-│  (us-east-1)  │      │  (eu-west-1)  │      │  (per customer)       │
-│               │      │               │      │                       │
-│ Multi-tenant  │      │ GDPR Isolated │      │ Fully Isolated Stack  │
-│ Shared Infra  │      │ No data exits │      │ - Own VPC             │
-└───────┬───────┘      └───────┬───────┘      │ - Own EKS             │
-        │                      │              │ - Own RDS             │
-        ▼                      ▼              └───────────────────────┘
-┌─────────────────────────────────────┐
-│  Per-Region Resources:              │
-│  • VPC (3 AZs, public/private/DB)   │
-│  • EKS Cluster (managed nodes)      │
-│  • RDS PostgreSQL (encrypted)       │
-│  • SQS Queues (SSE enabled)         │
-└─────────────────────────────────────┘
+```text
++-------------------------------------------------------------------------+
+|                         GLOBAL CONFIGURATION                            |
+|                           (globals.hcl)                                 |
++------------------------------------+------------------------------------+
+                                     |
+         +--------------------------++--------------------------+
+         |                          |                           |
+         v                          v                           v
++----------------+        +----------------+        +-----------------------+
+|   US REGION    |        |   EU REGION    |        |    SINGLE-TENANT      |
+|   (us-east-1)  |        |   (eu-west-1)  |        |    (per customer)     |
+|                |        |                |        |                       |
+|  Multi-tenant  |        |  GDPR Isolated |        |  Fully Isolated Stack |
+|  Shared Infra  |        |  No data exits |        |  - Own VPC            |
++-------+--------+        +-------+--------+        |  - Own EKS            |
+        |                         |                 |  - Own RDS            |
+        v                         v                 +-----------------------+
++-------------------------------------+
+|  Per-Region Resources:              |
+|  - VPC (3 AZs, public/private/DB)   |
+|  - EKS Cluster (managed nodes)      |
+|  - RDS PostgreSQL (encrypted)       |
+|  - SQS Queues (SSE enabled)         |
++-------------------------------------+
 ```
 
 ---
@@ -204,7 +205,7 @@ terragrunt run --all apply
 
 ## Configuration Guide
 
-This project uses three key configuration files that work together. Understanding their roles is essential for maintaining and extending the infrastructure.
+This project uses three key configuration files that work together.
 
 ### Overview: The Three Key Files
 
@@ -337,48 +338,36 @@ unit "sqs-events" { ... }
 
 ### How They Work Together
 
+```text
++---------------------------------------------------------------------+
+|                         globals.hcl                                 |
+|               (All values: versions, sizes, CIDRs)                  |
++--------------------------------+------------------------------------+
+                                 |
+                                 v
++---------------------------------------------------------------------+
+|                   live/terragrunt.stack.hcl                         |
+|            (Reads globals, defines US/EU/single-tenant)             |
+|                                                                     |
+|   stack "us" -----+                                                 |
+|   stack "eu" -----+--> Each uses _stacks/environment                |
+|   stack "acme" ---+                                                 |
++--------------------------------+------------------------------------+
+                                 |
+                                 v
++---------------------------------------------------------------------+
+|            _stacks/environment/terragrunt.stack.hcl                 |
+|      (Defines VPC + EKS + RDS + SQS as a reusable pattern)          |
++--------------------------------+------------------------------------+
+                                 |
+                                 v
++---------------------------------------------------------------------+
+|                          _units/                                    |
+|           (Individual Terraform modules: vpc, eks, rds, sqs)        |
++---------------------------------------------------------------------+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         globals.hcl                                  │
-│               (All values: versions, sizes, CIDRs)                   │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   live/terragrunt.stack.hcl                          │
-│            (Reads globals, defines US/EU/single-tenant)              │
-│                                                                      │
-│   stack "us" ─────┐                                                  │
-│   stack "eu" ─────┼──▶ Each uses _stacks/environment                 │
-│   stack "acme" ───┘                                                  │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│            _stacks/environment/terragrunt.stack.hcl                  │
-│      (Defines VPC + EKS + RDS + SQS as a reusable pattern)           │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                          _units/                                     │
-│           (Individual Terraform modules: vpc, eks, rds, sqs)         │
-└─────────────────────────────────────────────────────────────────────┘
-```
 
----
 
-### Common Tasks Quick Reference
-
-| Task | File to Edit | Action |
-|------|--------------|--------|
-| Change EKS version | `globals.hcl` | Update `eks.us.cluster_version`, etc. |
-| Add more EKS nodes | `globals.hcl` | Update `eks.*.node_groups.*.max_size` |
-| Change RDS instance size | `globals.hcl` | Update `rds.*.instance_class` |
-| Add new region (e.g., Asia) | `globals.hcl` + `live/terragrunt.stack.hcl` | Add region config + new stack block |
-| Add new single-tenant | `globals.hcl` + `live/terragrunt.stack.hcl` | Add tenant config + new stack block |
-| Add ElastiCache to all envs | `_stacks/environment/terragrunt.stack.hcl` | Add new `unit "elasticache"` block |
-| Remove SQS from all envs | `_stacks/environment/terragrunt.stack.hcl` | Remove SQS unit blocks |
 
 ---
 
@@ -442,51 +431,13 @@ The EU region is designed for GDPR compliance:
 | **Encryption in Transit** | EKS with HTTPS ingress, RDS with TLS |
 | **Compliance Tags** | All resources tagged with `Compliance = GDPR`, `DataResidency = EU` |
 
-**Where is `is_gdpr_region` used?**
-
-The `is_gdpr_region` flag in `globals.hcl` is used to:
-1. Apply compliance tags (`Compliance`, `DataResidency`, `DataClassification`)
-2. Enforce longer backup retention (30 days vs 7 days)
-3. Document which regions require special handling (for audit purposes)
 
 ---
 
-## Cloud Migration Strategy
-
-This infrastructure is designed for **workload portability**:
-
-| Component | Current | Migration Path |
-|-----------|---------|----------------|
-| **Compute** | EKS (Kubernetes) | Same containers → AKS, GKE, or any K8s |
-| **Database** | RDS PostgreSQL | `pg_dump` → Any PostgreSQL service |
-| **Messaging** | SQS | Application abstraction layer (see below) |
-| **Networking** | VPC | Rewrite Terraform (expected for any cloud) |
-
 ### Messaging Abstraction Pattern
 
-SQS is AWS-proprietary. For migration, use an application-level abstraction:
+SQS is AWS-proprietary. For migration, use an application-level abstraction.
 
-```typescript
-// Abstract interface (application code)
-interface IMessageQueue {
-  send(queue: string, message: object): Promise<void>;
-  receive(queue: string): Promise<Message[]>;
-}
-
-// AWS Implementation
-class SQSAdapter implements IMessageQueue {
-  async send(queue, message) { /* AWS SDK */ }
-  async receive(queue) { /* AWS SDK */ }
-}
-
-// Azure Implementation (for migration)
-class AzureServiceBusAdapter implements IMessageQueue {
-  async send(queue, message) { /* Azure SDK */ }
-  async receive(queue) { /* Azure SDK */ }
-}
-```
-
-**Infrastructure only provisions SQS** — the abstraction is an application concern.
 
 ---
 
@@ -495,135 +446,15 @@ class AzureServiceBusAdapter implements IMessageQueue {
 | Component | Module | Version |
 |-----------|--------|---------|
 | VPC | [terraform-aws-modules/vpc/aws](https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws) | 5.5.1 |
-| EKS | [terraform-aws-modules/eks/aws](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws) | 20.8.1 |
 | RDS | [terraform-aws-modules/rds/aws](https://registry.terraform.io/modules/terraform-aws-modules/rds/aws) | 6.4.0 |
 | SQS | [terraform-aws-modules/sqs/aws](https://registry.terraform.io/modules/terraform-aws-modules/sqs/aws) | 4.1.1 |
 
 ---
 
-## Adding Local Terraform Modules (Optional)
 
-If you need to create **custom local modules** instead of using remote AWS modules:
-
-### 1. Create a Local Module
-
-```bash
-mkdir -p modules/my-custom-module
-```
-
-```hcl
-# modules/my-custom-module/main.tf
-resource "aws_s3_bucket" "this" {
-  bucket = var.bucket_name
-  # ... custom configuration
-}
-
-# modules/my-custom-module/variables.tf
-variable "bucket_name" {
-  type = string
-}
-
-# modules/my-custom-module/outputs.tf
-output "bucket_arn" {
-  value = aws_s3_bucket.this.arn
-}
-```
-
-### 2. Create a Unit Wrapper
-
-```bash
-mkdir -p _units/my-custom-module
-```
-
-```hcl
-# _units/my-custom-module/terragrunt.hcl
-terraform {
-  # Point to local module instead of remote
-  source = "${get_repo_root()}/modules/my-custom-module"
-}
-
-include "root" {
-  path   = find_in_parent_folders("root.hcl")
-  expose = true
-}
-
-inputs = {
-  bucket_name = "${values.project_name}-${values.environment}-${values.bucket_purpose}"
-}
-```
-
-### 3. Add Configuration to `globals.hcl`
-
-```hcl
-# globals.hcl
-locals {
-  # ... existing config ...
-  
-  # Add new component configuration
-  s3_buckets = {
-    us = {
-      bucket_purpose = "data-lake"
-      # ... other settings
-    }
-    eu = {
-      bucket_purpose = "data-lake"
-      # ... other settings
-    }
-  }
-}
-```
-
-### 4. Update `live/terragrunt.stack.hcl`
-
-Pass the new configuration values to the environment stack:
-
-```hcl
-# live/terragrunt.stack.hcl
-stack "us" {
-  source = "../_stacks/environment"
-  path   = "us"
-
-  values = {
-    # ... existing values ...
-    
-    # Add new component config
-    s3_buckets = local.globals.s3_buckets.us
-  }
-}
-
-stack "eu" {
-  # ... same pattern for EU
-  values = {
-    s3_buckets = local.globals.s3_buckets.eu
-  }
-}
-```
-
-### 5. Add Unit to Environment Stack
-
-```hcl
-# _stacks/environment/terragrunt.stack.hcl
-unit "my-custom-module" {
-  source = "${local.units_path}/my-custom-module"
-  path   = "my-custom-module"
-  values = {
-    project_name   = values.project_name
-    environment    = values.environment
-    bucket_purpose = values.s3_buckets.bucket_purpose
-  }
-}
-```
-
-### 6. Regenerate and Deploy
-
-```bash
-cd live
-terragrunt stack generate
-terragrunt run --all apply
-```
 
 > [!NOTE]
-> The data flow is: `globals.hcl` → `live/terragrunt.stack.hcl` → `_stacks/environment/terragrunt.stack.hcl` → `_units/*/terragrunt.hcl` → `modules/*`
+> The data flow is: `globals.hcl` → `live/terragrunt.stack.hcl` → `_stacks/environment/terragrunt.stack.hcl` → `_units/*/terragrunt.hcl`
 
 ---
 
@@ -739,74 +570,3 @@ jobs:
 
       # Deploy other regions sequentially or in parallel jobs
 ```
-
-### GitLab CI Example
-
-Create `.gitlab-ci.yml`:
-
-```yaml
-stages:
-  - validate
-  - plan
-  - apply
-
-variables:
-  TF_VERSION: "1.5.7"
-  TG_VERSION: "0.97.2"
-
-.terragrunt-setup:
-  image: hashicorp/terraform:$TF_VERSION
-  before_script:
-    - apk add --no-cache curl
-    - curl -Lo /usr/local/bin/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v${TG_VERSION}/terragrunt_linux_amd64
-    - chmod +x /usr/local/bin/terragrunt
-
-validate:
-  extends: .terragrunt-setup
-  stage: validate
-  script:
-    - cd live
-    - terragrunt stack generate
-    - terragrunt run --all validate
-
-plan:us:
-  extends: .terragrunt-setup
-  stage: plan
-  script:
-    - cd live && terragrunt stack generate
-    - cd .terragrunt-stack/us
-    - terragrunt run --all plan
-  only:
-    - merge_requests
-
-apply:us:
-  extends: .terragrunt-setup
-  stage: apply
-  script:
-    - cd live && terragrunt stack generate
-    - cd .terragrunt-stack/us
-    - terragrunt run --all apply --auto-approve
-  only:
-    - main
-  when: manual  # Require manual approval
-```
-
-### Key CI/CD Best Practices
-
-| Practice | Implementation |
-|----------|----------------|
-| **Separate pipelines per region** | Deploy US, EU independently to limit blast radius |
-| **Use OIDC for AWS auth** | Avoid long-lived access keys |
-| **Plan on PR, Apply on merge** | Review changes before deployment |
-| **Manual approval for prod** | Use GitHub environments or GitLab `when: manual` |
-| **Cache Terraform providers** | Speed up CI runs with provider caching |
-
----
-
-## Future Enhancements (Out of Scope)
-
-- [ ] Security hardening (WAF, GuardDuty, Security Hub)
-- [ ] Logging & Monitoring (CloudWatch, OpenTelemetry)
-- [ ] VPN/Direct Connect for single-tenant customers
-- [ ] Multi-cloud modules (commented GCP/Azure examples)
-
